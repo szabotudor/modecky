@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/szabotudor/modecky",
   "devDependencies": {
+    "decky-frontend-lib": "^3.25.0",
     "@decky/rollup": "^1.0.1",
     "@decky/ui": "^4.10.4",
     "@types/react": "18.3.3",

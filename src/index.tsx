@@ -8,12 +8,14 @@ import {
   // routerHook
 } from "@decky/api"
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
+import { GameAction } from "@decky/ui/dist/globals/steam-client/App";
+import { useEffect, useState } from "react";
 
 function Content() {
   return (
-    <PanelSection title="Panel Section">
+    <PanelSection>
       <PanelSectionRow>
-        <h1>Hello World</h1>
+        <div className={staticClasses.Title}>Hello World</div>
       </PanelSectionRow>
     </PanelSection>
   );
