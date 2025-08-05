@@ -1,16 +1,10 @@
 import {
-  ButtonItem,
   PanelSection,
   PanelSectionRow,
-  Navigation,
   staticClasses
 } from "@decky/ui";
 import {
-  addEventListener,
-  removeEventListener,
-  callable,
   definePlugin,
-  toaster,
   // routerHook
 } from "@decky/api"
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
@@ -36,7 +30,7 @@ export default definePlugin(() => {
     // The content of your plugin's menu
     content: <Content />,
     // The icon displayed in the plugin list
-    icon: <Logo />,
+    icon: <img src={Logo} style={{height: "32px", objectFit: "contain"}}/>,
     // The function triggered when your plugin unloads
     onDismount() {
       console.log("Unloading MoDecky...")
