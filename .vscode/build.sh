@@ -8,3 +8,6 @@ printf "Please input sudo password to proceed.\n"
 # printf "\n"
 
 echo $sudopass | sudo -E $CLI_LOCATION/decky plugin build $(pwd)
+
+echo "Copying MoDecky.zip to home"
+cp ./out/MoDecky.zip ~/
