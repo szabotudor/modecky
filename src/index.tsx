@@ -5,17 +5,53 @@ import {
 } from "@decky/ui";
 import {
   definePlugin,
-  // routerHook
 } from "@decky/api"
+import {
+  Router,
+  sleep
+}
+from "decky-frontend-lib";
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
-import { GameAction } from "@decky/ui/dist/globals/steam-client/App";
 import { useEffect, useState } from "react";
+import { AppInfo, SteamInstallFolder } from "@decky/ui/dist/globals/steam-client/InstallFolder";
 
 function Content() {
+  const [appid, setAppid] = useState<string | null>("noapps");
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      SteamClient.InstallFolder.RefreshFolders();
+      
+      SteamClient.InstallFolder.GetInstallFolders().then(folders => {
+        const collected: string[] = [];
+
+        folders.forEach(folder => { folder.vecApps.forEach(app => {
+          collected.push(app.nAppID.toString());
+        })})
+
+        var allapps = "";
+
+        collected.forEach(app => {
+          // if (Router.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow.document.documentElement.innerHTML.includes(app)) {
+          //   if (appid == null)
+          //     setAppid(app);
+          //   else
+          //     setAppid("noapp");
+          // }
+          allapps += app + '\n';
+        })
+
+        setAppid(allapps);
+      })
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+  
   return (
     <PanelSection>
       <PanelSectionRow>
-        <div className={staticClasses.Title}>Hello World</div>
+        <div className={staticClasses.Title}>{appid ?? "??"}</div>
       </PanelSectionRow>
     </PanelSection>
   );
