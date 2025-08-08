@@ -1,4 +1,6 @@
 import {
+  ButtonItem,
+  MenuSeparator,
   PanelSection,
   PanelSectionRow,
   staticClasses
@@ -11,68 +13,111 @@ import {
 }
 from "decky-frontend-lib";
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
-import { ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-class Provider<T> {
-  element: JSX.Element = <div>Empty Provider</div>;
-  setter: React.Dispatch<React.SetStateAction<T>> = (_v: React.SetStateAction<T>) => { throw "invalid setter inside provider"; };
-};
 
-function AppProvider<T extends ReactNode>(default_text: string) {
-  const provider: Provider<T | null> = new Provider<T | null>();
+// CLASSES
 
-  const component: React.FC = () => {
-    const [app, setApp] = useState<T | null>(null);
-    provider.setter = setApp;
-    provider.element = <div>{app ?? default_text}</div>
-    return provider.element;
-  };
+class AppInfo {
+  appid: number = -1;
+  name: string = "none";
+  install_folder: string = "/";
 
-  return {provider, component};
+  constructor(appid: number, name: string, install_folder: string) {
+    this.appid = appid;
+    this.name = name;
+    this.install_folder = install_folder;
+  }
 }
 
-const appid = AppProvider<JSX.Element>("Select a game to continue.");
+
+// UTILITY FUNCTIONS
+
+var setModeckyMenu: React.Dispatch<React.SetStateAction<JSX.Element | null>>;
+
+async function findCurrentAppInfo(): Promise<AppInfo | null> {
+  const doc = Router.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow.document;
+  const html = doc?.documentElement.innerHTML;
+
+  const folders = await SteamClient.InstallFolder.GetInstallFolders();
+  for (const folder of folders)
+    for (const app of folder.vecApps)
+      if (html?.includes(app.nAppID.toString()))
+        return new AppInfo(app.nAppID, app.strAppName, folder.strFolderPath.concat("/stamapps/common/" + app.strAppName));
+  
+  const appname_found = await new Promise<string | null>((resolve) => {
+    doc?.querySelectorAll("div[role = \"button\"]").forEach(el => {
+      if (el.textContent.includes("Play"))
+        resolve(doc.querySelector("text")?.textContent ?? "No App Found");
+    })
+  })
+
+  if (appname_found)
+    return new AppInfo(-2, appname_found, "Could not infer path");
+
+  return null;
+}
+
+function enableModding(appid: number | string) {}
+
+
+// MENUS
+
+function generateCurrentGameMenu() {
+  findCurrentAppInfo().then(app => {
+    if (!app || !app.appid) {
+      setModeckyMenu(<PanelSection>
+        <PanelSectionRow>
+          <div className={staticClasses.Text}>Select a game in your library first</div>
+        </PanelSectionRow>  
+      </PanelSection>);
+    }
+    else {
+      setModeckyMenu(<PanelSection>
+        <PanelSectionRow>
+          <div className={staticClasses.Text}>Modding game "{app.name}"</div>
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ButtonItem onClick={() => enableModding(app.appid)} layout="below">
+            Mod this game
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>);
+    }
+  });
+}
+
+
+// DECKY STUFF
 
 function Content() {
+  const [modecky, setModecky] = useState<JSX.Element | null>(null);
+  setModeckyMenu = setModecky;
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      SteamClient.InstallFolder.RefreshFolders();
-      
-      SteamClient.InstallFolder.GetInstallFolders().then(folders => {
-        const collected: string[] = [];
+    const timeout = setTimeout(() => {
+      if (!modecky)
+        generateCurrentGameMenu();
+    }, 200);
 
-        folders.forEach(folder => { folder.vecApps.forEach(app => {
-          collected.push(app.nAppID.toString());
-        })})
-
-        collected.forEach(app => {
-          if (Router.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow.document.documentElement.innerHTML.includes(app)) {
-            appid.provider.setter(<div className={staticClasses.Title}>{app}</div>);
-          }
-        })
-      })
-    }, 1000);
-
-    return () => clearInterval(interval);
+    return () => clearTimeout(timeout);
   }, []);
-  
+
   return (
-    <PanelSection>
-      <PanelSectionRow>
-        <appid.component />
-      </PanelSectionRow>
-    </PanelSection>
+    modecky ?? <div>Nothing here</div>
   );
 };
 
 export default definePlugin(() => {
   console.log("MoDecky initializing...")
+  SteamClient.InstallFolder.RefreshFolders();
 
   return {
     // The name shown in various decky menus
     name: "MoDecky",
     // The element displayed at the top of your plugin's menu
-    titleView: <div className={staticClasses.Title}>Decky Example Plugin</div>,
+    titleView: <div className={staticClasses.Title}>MoDecky</div>,
     // The content of your plugin's menu
     content: <Content />,
     // The icon displayed in the plugin list
