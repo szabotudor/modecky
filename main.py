@@ -1,4 +1,4 @@
-import os, json, asyncio
+import os, json, asyncio, vdf, math
 
 # The decky plugin module is located at decky-loader/plugin
 # For easy intellisense checkout the decky-loader code repo
@@ -7,6 +7,8 @@ import decky
 
 settings_dir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
 settings_file = os.path.join(settings_dir, "modecky.json")
+
+_32bit_limit = math.pow(2, 32)
 
 
 def ensure_settings_exists():
@@ -51,17 +53,39 @@ class Plugin:
         # decky.migrate_runtime(
         #     os.path.join(decky.DECKY_HOME, "template"),
         #     os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
+
+    async def find_non_steam_game_name(self, appid: int) -> str:
+        userdata_dir = os.path.expanduser("~/.local/share/Steam/userdata/")
+        appid_str = str(appid)
+
+        for user in os.listdir(userdata_dir):
+            shortcuts_path = os.path.join(
+                userdata_dir,
+                user,
+                "config/shortcuts.vdf"
+            )
+
+            with open(shortcuts_path, 'rb') as file:
+                shortcuts = vdf.binary_load(file)
+                shortcuts = shortcuts["shortcuts"]
+
+                for _, shortcut in shortcuts.items():
+                    found_appid = shortcut.get("appid", "")
+                    if appid_str in str(found_appid if found_appid > 0 else (_32bit_limit + found_appid)):
+                        return str(shortcut.get("AppName", ""))
+
+        return "NO GAME"
     
-    async def is_game_managed(self, game_name: str) -> int:
+    async def is_game_managed(self, appid: int) -> bool:
         ensure_settings_exists()
 
         with open(settings_file, 'r') as file:
             data = json.load(file)
             file.close()
 
-            return 1 if game_name in data else 0
+            return str(appid) in data.keys()
     
-    async def manage_game(self, game_name: str, game_path: str) -> None:
+    async def manage_game(self, appid: int, game_name: str, game_path: str) -> None:
         ensure_settings_exists()
 
         data = {}
@@ -69,7 +93,8 @@ class Plugin:
             data = json.load(file)
             file.close()
         
-        data[game_name] = {
+        data[str(appid)] = {
+            "name": game_name,
             "path": game_path
         }
         data = json.dumps(data)
@@ -79,7 +104,7 @@ class Plugin:
             file.write(data)
             file.close()
     
-    async def unmanage_game(self, game_name: str) -> None:
+    async def unmanage_game(self, appid: int) -> None:
         ensure_settings_exists()
 
         data = {}
@@ -87,7 +112,7 @@ class Plugin:
             data = json.load(file)
             file.close()
         
-        data.pop(game_name, None)
+        data.pop(str(appid), None)
         data = json.dumps(data)
 
         with open(settings_file, 'w') as file:
