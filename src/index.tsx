@@ -1,11 +1,11 @@
 import {
   ButtonItem,
-  MenuSeparator,
   PanelSection,
   PanelSectionRow,
   staticClasses
 } from "@decky/ui";
 import {
+  callable,
   definePlugin,
 } from "@decky/api"
 import {
@@ -31,61 +31,105 @@ class AppInfo {
 }
 
 
+// PYTHON FUNCTIONS
+
+const is_game_managed = callable<[game_name: string], number>("is_game_managed");
+const manage_game = callable<[game_name: string, game_path: string], void>("manage_game");
+const unmanage_game = callable<[game_name: string], void>("unmanage_game");
+
+
 // UTILITY FUNCTIONS
 
 var setModeckyMenu: React.Dispatch<React.SetStateAction<JSX.Element | null>>;
 
 async function findCurrentAppInfo(): Promise<AppInfo | null> {
   const doc = Router.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow.document;
+
+  const in_game_menu = await new Promise<boolean>((resolve) => {
+    var found_play_button = false;
+    doc?.querySelectorAll("div[role = \"button\"]").forEach(el => {
+      if (el.textContent.includes("Play"))
+        found_play_button = true;
+    })
+    resolve(found_play_button);
+  })
+
+  if (!in_game_menu)
+    return null;
+
   const html = doc?.documentElement.innerHTML;
 
   const folders = await SteamClient.InstallFolder.GetInstallFolders();
   for (const folder of folders)
     for (const app of folder.vecApps)
       if (html?.includes(app.nAppID.toString()))
-        return new AppInfo(app.nAppID, app.strAppName, folder.strFolderPath.concat("/stamapps/common/" + app.strAppName));
+        return new AppInfo(app.nAppID, app.strAppName, folder.strFolderPath.concat("/steamapps/common/" + app.strAppName));
   
   const appname_found = await new Promise<string | null>((resolve) => {
-    doc?.querySelectorAll("div[role = \"button\"]").forEach(el => {
-      if (el.textContent.includes("Play"))
-        resolve(doc.querySelector("text")?.textContent ?? "No App Found");
-    })
+    resolve(doc?.querySelector("text")?.textContent ?? null);
   })
 
   if (appname_found)
-    return new AppInfo(-2, appname_found, "Could not infer path");
+    return new AppInfo(-2, appname_found, "NONE");
 
   return null;
 }
 
-function enableModding(appid: number | string) {}
+function enableModding(app: AppInfo) {
+  const game_name = (app.appid == -2) ? app.name : app.appid.toString();
+
+  setModeckyMenu(<PanelSection>
+    <PanelSectionRow>
+      <div className={staticClasses.Text}>Now modding {app.appid}</div>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <ButtonItem onClick={() => {unmanage_game(game_name); setModeckyMenu(null); generateCurrentGameMenu(app);}} layout="below">
+        Stop managing game
+      </ButtonItem>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <div className={staticClasses.Text}>
+        Warning: This will delete all modding data for the chosen game
+      </div>
+    </PanelSectionRow>
+  </PanelSection>)
+
+  manage_game(game_name, app.install_folder);
+}
 
 
 // MENUS
 
-function generateCurrentGameMenu() {
-  findCurrentAppInfo().then(app => {
-    if (!app || !app.appid) {
-      setModeckyMenu(<PanelSection>
-        <PanelSectionRow>
-          <div className={staticClasses.Text}>Select a game in your library first</div>
-        </PanelSectionRow>  
-      </PanelSection>);
-    }
-    else {
-      setModeckyMenu(<PanelSection>
-        <PanelSectionRow>
-          <div className={staticClasses.Text}>Modding game "{app.name}"</div>
-        </PanelSectionRow>
+function generateCurrentGameMenu(app: AppInfo | null) {
+  if (!app || !app.appid) {
+    setModeckyMenu(<PanelSection>
+      <PanelSectionRow>
+        <div className={staticClasses.Text}>Select a game in your library first</div>
+      </PanelSectionRow>  
+    </PanelSection>);
+  }
+  else {
+    is_game_managed((app.appid == -2) ? app.name : app.appid.toString()).then(game_exists => {
+      if (!game_exists) {
+        setModeckyMenu(<PanelSection>
+          <PanelSectionRow>
+            <div className={staticClasses.Text}>Would you like to start managing game "{app.name}" for modding?</div>
+          </PanelSectionRow>
 
-        <PanelSectionRow>
-          <ButtonItem onClick={() => enableModding(app.appid)} layout="below">
-            Mod this game
-          </ButtonItem>
-        </PanelSectionRow>
-      </PanelSection>);
-    }
-  });
+          <PanelSectionRow>
+            <ButtonItem onClick={() => enableModding(app)} layout="below">
+              Mod this game
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>);
+      }
+      else {
+        enableModding(app);
+      }
+    })
+  }
 }
 
 
@@ -97,9 +141,9 @@ function Content() {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (!modecky)
-        generateCurrentGameMenu();
-    }, 200);
+      if (modecky == null)
+        findCurrentAppInfo().then(app => generateCurrentGameMenu(app ?? null))
+    }, 500);
 
     return () => clearTimeout(timeout);
   }, []);

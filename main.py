@@ -1,15 +1,26 @@
-import os
+import os, json, asyncio
 
 # The decky plugin module is located at decky-loader/plugin
 # For easy intellisense checkout the decky-loader code repo
 # and add the `decky-loader/plugin/imports` path to `python.analysis.extraPaths` in `.vscode/settings.json`
 import decky
-import asyncio
+
+settings_dir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
+settings_file = os.path.join(settings_dir, "modecky.json")
+
+
+def ensure_settings_exists():
+    if not os.path.exists(settings_file):
+        with open(settings_file, 'w') as file:
+            data = {}
+            file.write(json.dumps(data))
+            file.close()
+
 
 class Plugin:
     # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
-    async def _main(self):
-        decky.logger.info("Hello World!")
+    # async def _main(self):
+    #     decky.logger.info("Hello World!")
 
     # Function called first during the unload process, utilize this to handle your plugin being stopped, but not
     # completely removed
@@ -40,3 +51,46 @@ class Plugin:
         # decky.migrate_runtime(
         #     os.path.join(decky.DECKY_HOME, "template"),
         #     os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
+    
+    async def is_game_managed(self, game_name: str) -> int:
+        ensure_settings_exists()
+
+        with open(settings_file, 'r') as file:
+            data = json.load(file)
+            file.close()
+
+            return 1 if game_name in data else 0
+    
+    async def manage_game(self, game_name: str, game_path: str) -> None:
+        ensure_settings_exists()
+
+        data = {}
+        with open(settings_file, 'r') as file:
+            data = json.load(file)
+            file.close()
+        
+        data[game_name] = {
+            "path": game_path
+        }
+        data = json.dumps(data)
+        
+        with open(settings_file, 'w') as file:
+            file.seek(0)
+            file.write(data)
+            file.close()
+    
+    async def unmanage_game(self, game_name: str) -> None:
+        ensure_settings_exists()
+
+        data = {}
+        with open(settings_file, 'r') as file:
+            data = json.load(file)
+            file.close()
+        
+        data.pop(game_name, None)
+        data = json.dumps(data)
+
+        with open(settings_file, 'w') as file:
+            file.seek(0)
+            file.write(data)
+            file.close()
