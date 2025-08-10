@@ -38,6 +38,7 @@ const find_non_steam_game_name = callable<[appid: number], string>("find_non_ste
 // UTILITY FUNCTIONS
 
 var setModeckyMenu: React.Dispatch<React.SetStateAction<JSX.Element | null>>;
+var getModeckyMenu: () => JSX.Element | null;
 
 async function findCurrentAppInfo(): Promise<AppInfo | null> {
   const url = Object.values(window).find(v => v.navigator)?.location.toString();
@@ -48,11 +49,13 @@ async function findCurrentAppInfo(): Promise<AppInfo | null> {
     return null;
   
   var [name, appfolder] = await new Promise<[string, string] | [null]>(async resolve => {
-    SteamClient.InstallFolder.GetInstallFolders().then(folders => folders.forEach(folder => folder.vecApps.forEach(app => {
-      if (app.nAppID == appid)
-        resolve([app.strAppName, folder.strFolderPath.concat("/steamapps/common/" + app.strAppName)]);
-    })));
-    resolve([null]);
+    SteamClient.InstallFolder.GetInstallFolders().then(folders => {
+      folders.forEach(folder => folder.vecApps.forEach(app => {
+        if (app.nAppID == appid)
+          resolve([app.strAppName, folder.strFolderPath.concat("/steamapps/common/" + app.strAppName)]);
+      }))
+      resolve([null]);
+    });
   })
 
   if (!name) {
@@ -68,22 +71,49 @@ async function findCurrentAppInfo(): Promise<AppInfo | null> {
   return new AppInfo(appid, name, appfolder ?? "NO PATH");
 }
 
-function enableModding(app: AppInfo) {
+
+function confirmationMenu(text: string, confirm_action: () => void) {
+  const current_menu = getModeckyMenu();
+
   setModeckyMenu(<PanelSection>
     <PanelSectionRow>
-      <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}<br/></div>
+      <div className={staticClasses.Text}>{text}</div>
     </PanelSectionRow>
 
     <PanelSectionRow>
-      <ButtonItem onClick={() => {unmanage_game(app.appid); setModeckyMenu(null); generateCurrentGameMenu(app);}} layout="below">
-        Stop managing game
+      <ButtonItem onClick={() => confirm_action()} layout="below">Confirm</ButtonItem>
+      <ButtonItem onClick={() => setModeckyMenu(current_menu)} layout="below">Decline</ButtonItem>
+    </PanelSectionRow>
+  </PanelSection>)
+}
+
+function enableModding(app: AppInfo) {
+  setModeckyMenu(<PanelSection>
+    <PanelSectionRow>
+      <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <div className={staticClasses.Text}><br/>Installation path: {app.install_folder}</div>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <ButtonItem onClick={() => {console.log("Browse new folder")}} layout="below">
+        Browse
       </ButtonItem>
     </PanelSectionRow>
 
     <PanelSectionRow>
-      <div className={staticClasses.Text}>
-        Warning: This will delete all modding data for the chosen game
-      </div>
+      <div className={staticClasses.Text}><br/></div>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <ButtonItem onClick={() => confirmationMenu(
+        "Are you sure?\nWARNING: This will delete all modding data and mods for this game",
+        () => {unmanage_game(app.appid); setModeckyMenu(null); generateCurrentGameMenu(app);}
+      )} layout="below">
+        Stop managing game
+      </ButtonItem>
     </PanelSectionRow>
   </PanelSection>)
 
@@ -106,7 +136,7 @@ function generateCurrentGameMenu(app: AppInfo | null) {
       if (!game_exists) {
         setModeckyMenu(<PanelSection>
           <PanelSectionRow>
-            <div className={staticClasses.Text}>Would you like to start managing game "{app.name}" for modding?</div>
+            <div className={staticClasses.Text}>Would you like to start managing game "{app.name}" with appid {app.appid} for modding?</div>
           </PanelSectionRow>
 
           <PanelSectionRow>
@@ -129,6 +159,7 @@ function generateCurrentGameMenu(app: AppInfo | null) {
 function Content() {
   const [modecky, setModecky] = useState<JSX.Element | null>(null);
   setModeckyMenu = setModecky;
+  getModeckyMenu = () => { return modecky; };
 
   useEffect(() => {
     const timeout = setTimeout(() => {
