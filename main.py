@@ -1,4 +1,6 @@
 import os, json, asyncio, vdf, math
+from typing import Any
+from os.path import isdir
 
 # The decky plugin module is located at decky-loader/plugin
 # For easy intellisense checkout the decky-loader code repo
@@ -54,6 +56,12 @@ class Plugin:
         #     os.path.join(decky.DECKY_HOME, "template"),
         #     os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
 
+    async def path_exists(self, path: str) -> bool:
+        return os.path.exists(os.path.expanduser(path))
+
+    async def get_user_dir(self) -> str:
+        return os.path.expanduser("~/")
+
     async def find_non_steam_game_name(self, appid: int) -> str:
         userdata_dir = os.path.expanduser("~/.local/share/Steam/userdata/")
         appid_str = str(appid)
@@ -75,60 +83,76 @@ class Plugin:
                         return str(shortcut.get("AppName", ""))
 
         return "NO GAME"
-    
-    async def is_game_managed(self, appid: int) -> bool:
-        ensure_settings_exists()
 
-        with open(settings_file, 'r') as file:
-            data = json.load(file)
-            file.close()
 
-            return str(appid) in data.keys()
-    
     async def manage_game(self, appid: int, game_name: str, game_path: str) -> None:
+        if not os.path.isdir(game_path):
+            return
+
         ensure_settings_exists()
 
         data = {}
         with open(settings_file, 'r') as file:
             data = json.load(file)
-            file.close()
-        
+
+        if str(appid) in data.keys():
+            old_modecky_folder = data.get(str(appid), {}).get("path", None)
+            if old_modecky_folder:
+                old_modecky_folder = os.path.join(old_modecky_folder, ".modecky")
+                if os.path.isdir(old_modecky_folder):
+                    os.rmdir(old_modecky_folder)
+
         data[str(appid)] = {
             "name": game_name,
             "path": game_path
         }
+
         data = json.dumps(data)
-        
         with open(settings_file, 'w') as file:
-            file.seek(0)
             file.write(data)
-            file.close()
-    
+
+        modecky_folder = os.path.join(game_path, ".modecky")
+        os.mkdir(modecky_folder)
+
     async def unmanage_game(self, appid: int) -> None:
         ensure_settings_exists()
 
         data = {}
         with open(settings_file, 'r') as file:
             data = json.load(file)
-            file.close()
-        
+
+        game_path = data.get(str(appid), {}).get("path", None)
+        if game_path:
+            modecky_path = os.path.join(game_path, ".modecky")
+            os.rmdir(modecky_path)
+
         data.pop(str(appid), None)
         data = json.dumps(data)
 
         with open(settings_file, 'w') as file:
-            file.seek(0)
             file.write(data)
-            file.close()
-    
-    async def get_managed_game_install_path(self, appid: int) -> str:
+
+    async def get_managed_game_install_path(self, appid: int) -> str | None:
         ensure_settings_exists()
 
         with open(settings_file, 'r') as file:
             data = json.load(file)
-            game = data.get(str(appid), None)
+            return data.get(str(appid), {}).get("path", None)
+    
+    async def scan_mods(self, appid: int) -> list[str]:
+        ensure_settings_exists()
 
-            if game:
-                return game.get("path")
-            file.close()
-        
-        return ""
+        game_path = ""
+        with open(settings_file, 'r') as file:
+            data = json.load(file)
+            game_path = data.get(str(appid), {}).get("path", None)
+
+        if not game_path:
+            return []
+
+        modecky_path = os.path.join(game_path, ".modecky")
+
+        if not os.path.isdir(modecky_path):
+            os.mkdir(modecky_path)
+
+        return os.listdir(modecky_path)

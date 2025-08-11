@@ -6,7 +6,9 @@ import {
 } from "@decky/ui";
 import {
   callable,
-  definePlugin
+  definePlugin,
+  FileSelectionType,
+  openFilePicker
 } from "@decky/api"
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
 import { useEffect, useState } from "react";
@@ -29,11 +31,18 @@ class AppInfo {
 
 // PYTHON FUNCTIONS
 
-const is_game_managed = callable<[appid: number], boolean>("is_game_managed");
+const path_exists = callable<[path: string], boolean>("path_exists");
+const get_user_dir = callable<[], string>("get_user_dir");
 const manage_game = callable<[appid: number, game_name: string, game_path: string], void>("manage_game");
 const unmanage_game = callable<[appid: number], void>("unmanage_game");
 const find_non_steam_game_name = callable<[appid: number], string>("find_non_steam_game_name");
-const get_managed_game_install_path = callable<[appid: number], string>("get_managed_game_install_path");
+const get_managed_game_install_path = callable<[appid: number], string | null>("get_managed_game_install_path");
+
+// 0 - disabled
+// 1 - partial instalation (maybe failed, cannot use uninstall.json to uninstall mod, will delete mod files directly when disabling the mod)
+// Might attempt to revert replaced game files, but no guarantee is made for the success of this operation
+// 2 - successful installation (will use uninstall.json to uninstall mod properly, and revert any replaced game files)
+const scan_mods = callable<[appid: number], string[]>("scan_mods");
 
 
 // UTILITY FUNCTIONS
@@ -73,6 +82,16 @@ async function findCurrentAppInfo(): Promise<AppInfo | null> {
 }
 
 
+function browse_for_game(app: AppInfo) {
+  path_exists(app.install_folder).then(async path_is_valid =>
+    openFilePicker(FileSelectionType.FOLDER, path_is_valid ? app.install_folder : await get_user_dir(), false, true).then(({path}) => {
+      app.install_folder = path;
+      manage_game(app.appid, app.name, path);
+      showModdingMenu(app);
+    })
+  );
+}
+
 function confirmationMenu(text: JSX.Element, confirm_text: string, decline_text: string, confirm_action: () => void) {
   const current_menu = getModeckyMenu();
 
@@ -89,7 +108,14 @@ function confirmationMenu(text: JSX.Element, confirm_text: string, decline_text:
 }
 
 function showModdingMenu(app: AppInfo) {
-  setModeckyMenu(<PanelSection>
+  scan_mods(app.appid).then(mods => {
+    var mods_section: Array<JSX.Element> = new Array<JSX.Element>;
+    
+    mods.forEach(mod => {
+      mods_section.push(<div className={staticClasses.Text}>{mod}</div>)
+    });
+
+    setModeckyMenu(<PanelSection>
     <PanelSectionRow>
       <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
     </PanelSectionRow>
@@ -99,24 +125,27 @@ function showModdingMenu(app: AppInfo) {
     </PanelSectionRow>
 
     <PanelSectionRow>
-      <ButtonItem onClick={() => {console.log("Browse new folder")}} layout="below">
+      <ButtonItem onClick={() => {browse_for_game(app)}} layout="below">
         Browse
       </ButtonItem>
     </PanelSectionRow>
 
     <PanelSectionRow>
+      <div className={staticClasses.Text}><br/>Available mods:</div>
+      {mods_section}
       <div className={staticClasses.Text}><br/></div>
     </PanelSectionRow>
 
     <PanelSectionRow>
       <ButtonItem onClick={() => confirmationMenu(
         <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
-        () => {unmanage_game(app.appid); generateCurrentGameMenu(app);}
+        () => {unmanage_game(app.appid).then(() => generateCurrentGameMenu(app));}
       )} layout="below">
         Stop managing game
       </ButtonItem>
     </PanelSectionRow>
   </PanelSection>)
+  })
 }
 
 
@@ -131,24 +160,24 @@ function generateCurrentGameMenu(app: AppInfo | null) {
     </PanelSection>);
   }
   else {
-    is_game_managed(app.appid).then(game_exists => {
-      if (!game_exists) {
+    get_managed_game_install_path(app.appid).then(saved_path => {
+      if (saved_path) {
+        showModdingMenu(new AppInfo(app.appid, app.name, saved_path));
+      }
+      else {
         setModeckyMenu(<PanelSection>
           <PanelSectionRow>
             <div className={staticClasses.Text}>Would you like to start managing game "{app.name}" with appid {app.appid} for modding?</div>
           </PanelSectionRow>
 
           <PanelSectionRow>
-            <ButtonItem onClick={() => {manage_game(app.appid, app.name, app.install_folder); showModdingMenu(app)}} layout="below">
+            <ButtonItem onClick={() => manage_game(app.appid, app.name, app.install_folder).then(() => showModdingMenu(app))} layout="below">
               Mod this game
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>);
       }
-      else {
-        get_managed_game_install_path(app.appid).then(saved_path => showModdingMenu(new AppInfo(app.appid, app.name, saved_path)));
-      }
-    })
+    });
   }
 }
 
@@ -163,7 +192,7 @@ function Content() {
   useEffect(() => {
     if (modecky == null) {
       findCurrentAppInfo().then(app => {
-        generateCurrentGameMenu(app ?? null);
+        generateCurrentGameMenu(app);
       })
     }
   }, []);
