@@ -119,3 +119,16 @@ class Plugin:
             file.seek(0)
             file.write(data)
             file.close()
+    
+    async def get_managed_game_install_path(self, appid: int) -> str:
+        ensure_settings_exists()
+
+        with open(settings_file, 'r') as file:
+            data = json.load(file)
+            game = data.get(str(appid), None)
+
+            if game:
+                return game.get("path")
+            file.close()
+        
+        return ""

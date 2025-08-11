@@ -33,6 +33,7 @@ const is_game_managed = callable<[appid: number], boolean>("is_game_managed");
 const manage_game = callable<[appid: number, game_name: string, game_path: string], void>("manage_game");
 const unmanage_game = callable<[appid: number], void>("unmanage_game");
 const find_non_steam_game_name = callable<[appid: number], string>("find_non_steam_game_name");
+const get_managed_game_install_path = callable<[appid: number], string>("get_managed_game_install_path");
 
 
 // UTILITY FUNCTIONS
@@ -72,7 +73,7 @@ async function findCurrentAppInfo(): Promise<AppInfo | null> {
 }
 
 
-function confirmationMenu(text: string, confirm_action: () => void) {
+function confirmationMenu(text: JSX.Element, confirm_text: string, decline_text: string, confirm_action: () => void) {
   const current_menu = getModeckyMenu();
 
   setModeckyMenu(<PanelSection>
@@ -81,13 +82,13 @@ function confirmationMenu(text: string, confirm_action: () => void) {
     </PanelSectionRow>
 
     <PanelSectionRow>
-      <ButtonItem onClick={() => confirm_action()} layout="below">Confirm</ButtonItem>
-      <ButtonItem onClick={() => setModeckyMenu(current_menu)} layout="below">Decline</ButtonItem>
+      <ButtonItem onClick={() => confirm_action()} layout="below">{confirm_text}</ButtonItem>
+      <ButtonItem onClick={() => setModeckyMenu(current_menu)} layout="below">{decline_text}</ButtonItem>
     </PanelSectionRow>
   </PanelSection>)
 }
 
-function enableModding(app: AppInfo) {
+function showModdingMenu(app: AppInfo) {
   setModeckyMenu(<PanelSection>
     <PanelSectionRow>
       <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
@@ -109,15 +110,13 @@ function enableModding(app: AppInfo) {
 
     <PanelSectionRow>
       <ButtonItem onClick={() => confirmationMenu(
-        "Are you sure?\nWARNING: This will delete all modding data and mods for this game",
-        () => {unmanage_game(app.appid); setModeckyMenu(null); generateCurrentGameMenu(app);}
+        <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
+        () => {unmanage_game(app.appid); generateCurrentGameMenu(app);}
       )} layout="below">
         Stop managing game
       </ButtonItem>
     </PanelSectionRow>
   </PanelSection>)
-
-  manage_game(app.appid, app.name, app.install_folder);
 }
 
 
@@ -140,14 +139,14 @@ function generateCurrentGameMenu(app: AppInfo | null) {
           </PanelSectionRow>
 
           <PanelSectionRow>
-            <ButtonItem onClick={() => enableModding(app)} layout="below">
+            <ButtonItem onClick={() => {manage_game(app.appid, app.name, app.install_folder); showModdingMenu(app)}} layout="below">
               Mod this game
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>);
       }
       else {
-        enableModding(app);
+        get_managed_game_install_path(app.appid).then(saved_path => showModdingMenu(new AppInfo(app.appid, app.name, saved_path)));
       }
     })
   }
@@ -162,19 +161,15 @@ function Content() {
   getModeckyMenu = () => { return modecky; };
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (modecky == null) {
-        findCurrentAppInfo().then(app => {
-          generateCurrentGameMenu(app ?? null);
-        })
-      }
-    }, 500);
-
-    return () => clearTimeout(timeout);
+    if (modecky == null) {
+      findCurrentAppInfo().then(app => {
+        generateCurrentGameMenu(app ?? null);
+      })
+    }
   }, []);
 
   return (
-    modecky ?? <div>Nothing here</div>
+    modecky ?? <div>Loading...</div>
   );
 };
 
