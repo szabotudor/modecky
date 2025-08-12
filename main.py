@@ -203,10 +203,9 @@ class Plugin:
     async def set_active_profile(self, appid: int, profile_name: str | None) -> None:
         profiles = self.read_profiles(appid)
 
-        if not profile_name:
+        if not profile_name or profile_name not in profiles.get("profiles", []):
             profiles.pop("active_profile", None)
-
-        if profile_name in profiles.get("profiles", []):
+        if profile_name:
             profiles["active_profile"] = profile_name
 
         self.write_profiles(appid, profiles)
@@ -242,8 +241,8 @@ class Plugin:
     async def rename_profile(self, appid: int, profile_name: str, new_name: str | None) -> None:
         profiles = self.read_profiles(appid)
 
-        if "profiles" in profiles:
-            profiles["profiles"].pop(profiles.get("profiles", []).index(profile_name))
+        if "profiles" in profiles.keys():
+            profiles["profiles"].remove(profile_name)
             if new_name:
                 profiles["profiles"].append(new_name)
 
@@ -253,6 +252,8 @@ class Plugin:
             })
 
         profiles["profile_data"].pop(profile_name, None)
+
+        self.write_profiles(appid, profiles)
 
     async def get_profile_load_order(self, appid: int, profile_name: str) -> list[str]:
         profiles = self.read_profiles(appid)

@@ -1,16 +1,16 @@
 import {
   ButtonItem,
-  MenuGroup,
   PanelSection,
   PanelSectionRow,
   staticClasses,
-  ToggleField
+  TextField
 } from "@decky/ui";
 import {
   callable,
   definePlugin,
   FileSelectionType,
-  openFilePicker
+  openFilePicker,
+  toaster
 } from "@decky/api"
 import Logo from "../assets/xelu/Steam Deck/SteamDeck_Power.png";
 import { useEffect, useState } from "react";
@@ -48,6 +48,8 @@ const create_profile = callable<[appid: number], string>("create_profile");
 const rename_profile = callable<[appid: number, profile_name: string, new_name: string | null], null>("rename_profile");
 const get_profile_load_order = callable<[appid: number, profile_name: string], string[]>("get_profile_load_order");
 const set_profile_load_order = callable<[appid: number, profile_name: string, load_order: string[]], null>("set_profile_load_order");
+
+var profile_rename_cache: string = "";
 
 
 // UTILITY FUNCTIONS
@@ -87,7 +89,7 @@ async function findCurrentAppInfo(): Promise<AppInfo | null> {
 }
 
 
-function browse_for_game(app: AppInfo) {
+function browseForGame(app: AppInfo) {
   path_exists(app.install_folder).then(async path_is_valid =>
     openFilePicker(FileSelectionType.FOLDER, path_is_valid ? app.install_folder : await get_user_dir(), false, true).then(({path}) => {
       app.install_folder = path;
@@ -115,11 +117,50 @@ function confirmationMenu(text: JSX.Element, confirm_text: string, decline_text:
 function showProfileMenu(app: AppInfo, profile: string): void {
   setModeckyMenu(<PanelSection>
     <PanelSectionRow>
-      <div className={staticClasses.Text}>Active profile: {profile}</div>
+      <div className={staticClasses.Title}>{profile}</div>
     </PanelSectionRow>
 
     <PanelSectionRow>
-    <ButtonItem onClick={() => { set_active_profile(app.appid, null); showModdingMenu(app); }} layout="below">Back to Mod Menu</ButtonItem>
+      <TextField
+      onChange={(event) => { profile_rename_cache = event.target.value; }}
+      label="Profile Name"
+      rangeMin={3}></TextField>
+
+      <ButtonItem
+      onClick={() => {
+        if (profile_rename_cache.length >= 3) {
+          rename_profile(app.appid, profile, profile_rename_cache).then(() =>
+            set_active_profile(app.appid, profile_rename_cache).then(() =>
+              showProfileMenu(app, profile_rename_cache)
+            )
+          );
+        }
+      }}
+      layout="below">
+        Rename
+      </ButtonItem>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <br/>
+      <ButtonItem onClick={() => { set_active_profile(app.appid, null); showModdingMenu(app); }} layout="below">Stop Managing Mod</ButtonItem>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+      <ButtonItem onClick={() => {
+        confirmationMenu(
+          <div>Are you sure?<br/>WARNING: This won't delete the mods in this profile, BUT it will delete all profile data permanently</div>,
+          "Yes I'm sure",
+          "Nevermind",
+          () => rename_profile(app.appid, profile, null).then(() =>
+            set_active_profile(app.appid, null).then(() =>
+              showModdingMenu(app)
+            )
+          )
+        )
+      }} layout="below">
+        <div style={{ color:'red' }}>DELETE PROFILE</div>
+      </ButtonItem>
     </PanelSectionRow>
   </PanelSection>)
 }
@@ -140,15 +181,6 @@ function showModdingMenu(app: AppInfo) {
     setModeckyMenu(<PanelSection>
       <PanelSectionRow>
         <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <ButtonItem onClick={() => confirmationMenu(
-          <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
-          () => {unmanage_game(app.appid).then(() => generateCurrentGameMenu(app));}
-        )} layout="below">
-          Stop managing game
-        </ButtonItem>
         <br/>
       </PanelSectionRow>
 
@@ -158,7 +190,7 @@ function showModdingMenu(app: AppInfo) {
       </PanelSectionRow>
 
       <PanelSectionRow>
-        <ButtonItem onClick={() => {browse_for_game(app)}} layout="below">
+        <ButtonItem onClick={() => {browseForGame(app)}} layout="below">
           Browse
         </ButtonItem>
         <br/>
@@ -179,9 +211,19 @@ function showModdingMenu(app: AppInfo) {
       </PanelSectionRow>
 
       <PanelSectionRow>
-        <ButtonItem onClick={() => { create_profile(app.appid); }} layout="below">
+        <ButtonItem onClick={() => { create_profile(app.appid); showModdingMenu(app); }} layout="below">
           Add Profile
         </ButtonItem>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+          <ButtonItem onClick={() => confirmationMenu(
+            <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
+            () => {unmanage_game(app.appid).then(() => generateCurrentGameMenu(app));}
+          )} layout="below">
+            <div style={{ color:'red' }}>STOP MANAGING GAME</div>
+          </ButtonItem>
+        <br/>
       </PanelSectionRow>
     </PanelSection>)
   }))
