@@ -1,8 +1,10 @@
 import {
   ButtonItem,
+  MenuGroup,
   PanelSection,
   PanelSectionRow,
-  staticClasses
+  staticClasses,
+  ToggleField
 } from "@decky/ui";
 import {
   callable,
@@ -38,11 +40,14 @@ const unmanage_game = callable<[appid: number], void>("unmanage_game");
 const find_non_steam_game_name = callable<[appid: number], string>("find_non_steam_game_name");
 const get_managed_game_install_path = callable<[appid: number], string | null>("get_managed_game_install_path");
 
-// 0 - disabled
-// 1 - partial instalation (maybe failed, cannot use uninstall.json to uninstall mod, will delete mod files directly when disabling the mod)
-// Might attempt to revert replaced game files, but no guarantee is made for the success of this operation
-// 2 - successful installation (will use uninstall.json to uninstall mod properly, and revert any replaced game files)
 const scan_mods = callable<[appid: number], string[]>("scan_mods");
+const scan_profiles = callable<[appid: number], string[]>("scan_profiles");
+const get_active_profile = callable<[appid: number], string | null>("get_active_profile");
+const set_active_profile = callable<[appid: number, profile_name: string | null], null>("set_active_profile");
+const create_profile = callable<[appid: number], string>("create_profile");
+const rename_profile = callable<[appid: number, profile_name: string, new_name: string | null], null>("rename_profile");
+const get_profile_load_order = callable<[appid: number, profile_name: string], string[]>("get_profile_load_order");
+const set_profile_load_order = callable<[appid: number, profile_name: string, load_order: string[]], null>("set_profile_load_order");
 
 
 // UTILITY FUNCTIONS
@@ -107,45 +112,79 @@ function confirmationMenu(text: JSX.Element, confirm_text: string, decline_text:
   </PanelSection>)
 }
 
+function showProfileMenu(app: AppInfo, profile: string): void {
+  setModeckyMenu(<PanelSection>
+    <PanelSectionRow>
+      <div className={staticClasses.Text}>Active profile: {profile}</div>
+    </PanelSectionRow>
+
+    <PanelSectionRow>
+    <ButtonItem onClick={() => { set_active_profile(app.appid, null); showModdingMenu(app); }} layout="below">Back to Mod Menu</ButtonItem>
+    </PanelSectionRow>
+  </PanelSection>)
+}
+
 function showModdingMenu(app: AppInfo) {
-  scan_mods(app.appid).then(mods => {
-    var mods_section: Array<JSX.Element> = new Array<JSX.Element>;
-    
+  scan_mods(app.appid).then(mods => scan_profiles(app.appid).then(async profile_ids => {
+    var mods_section: Array<JSX.Element> = [];
+    var profiles_section: Array<JSX.Element> = [];
+
     mods.forEach(mod => {
       mods_section.push(<div className={staticClasses.Text}>{mod}</div>)
     });
 
+    profile_ids.forEach(profile => {
+      profiles_section.push(<ButtonItem label={profile} onClick={() => { set_active_profile(app.appid, profile); showProfileMenu(app, profile); }}>Manage</ButtonItem>);
+    })
+
     setModeckyMenu(<PanelSection>
-    <PanelSectionRow>
-      <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
-    </PanelSectionRow>
+      <PanelSectionRow>
+        <div className={staticClasses.Text}>Now modding "{app.name}" with appid {app.appid}</div>
+      </PanelSectionRow>
 
-    <PanelSectionRow>
-      <div className={staticClasses.Text}><br/>Installation path: {app.install_folder}</div>
-    </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem onClick={() => confirmationMenu(
+          <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
+          () => {unmanage_game(app.appid).then(() => generateCurrentGameMenu(app));}
+        )} layout="below">
+          Stop managing game
+        </ButtonItem>
+        <br/>
+      </PanelSectionRow>
 
-    <PanelSectionRow>
-      <ButtonItem onClick={() => {browse_for_game(app)}} layout="below">
-        Browse
-      </ButtonItem>
-    </PanelSectionRow>
+      <PanelSectionRow>
+        <div className={staticClasses.Title}>Installation path</div>
+        <div className={staticClasses.Text}><br/>{app.install_folder}</div>
+      </PanelSectionRow>
 
-    <PanelSectionRow>
-      <div className={staticClasses.Text}><br/>Available mods:</div>
-      {mods_section}
-      <div className={staticClasses.Text}><br/></div>
-    </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem onClick={() => {browse_for_game(app)}} layout="below">
+          Browse
+        </ButtonItem>
+        <br/>
+      </PanelSectionRow>
 
-    <PanelSectionRow>
-      <ButtonItem onClick={() => confirmationMenu(
-        <div>Are you sure?<br/>WARNING: This will delete all modding data and mods for this game</div>, "Yes I'm Sure", "Nevermind",
-        () => {unmanage_game(app.appid).then(() => generateCurrentGameMenu(app));}
-      )} layout="below">
-        Stop managing game
-      </ButtonItem>
-    </PanelSectionRow>
-  </PanelSection>)
-  })
+      <PanelSectionRow>
+        <div className={staticClasses.Title}>Available mods:</div>
+        <br/>
+        {mods_section}
+        <br/>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+        <div className={staticClasses.Title}>Profiles:</div>
+        <br/>
+        {profiles_section}
+        <br/>
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+        <ButtonItem onClick={() => { create_profile(app.appid); }} layout="below">
+          Add Profile
+        </ButtonItem>
+      </PanelSectionRow>
+    </PanelSection>)
+  }))
 }
 
 
@@ -162,7 +201,12 @@ function generateCurrentGameMenu(app: AppInfo | null) {
   else {
     get_managed_game_install_path(app.appid).then(saved_path => {
       if (saved_path) {
-        showModdingMenu(new AppInfo(app.appid, app.name, saved_path));
+        get_active_profile(app.appid).then(active_profile => {
+          if (active_profile)
+            showProfileMenu(new AppInfo(app.appid, app.name, saved_path), active_profile);
+          else
+            showModdingMenu(new AppInfo(app.appid, app.name, saved_path));
+        })
       }
       else {
         setModeckyMenu(<PanelSection>
